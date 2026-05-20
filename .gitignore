@@ -10,3 +10,4 @@ outputs/tables/*
 !data/processed/.gitkeep
 !outputs/figures/.gitkeep
 !outputs/tables/.gitkeep
+.DS_Store
