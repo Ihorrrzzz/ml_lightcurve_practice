@@ -8,6 +8,7 @@ outputs/figures/*
 outputs/tables/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+!data/processed/real_lightcurves_template.csv
 !outputs/figures/.gitkeep
 !outputs/tables/.gitkeep
 .DS_Store
