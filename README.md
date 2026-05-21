@@ -29,10 +29,13 @@ ml_lightcurve_practice/
 │   ├── 02_run_real_data_mvp.py
 │   ├── 03_download_ogle_lmc_sample.py
 │   ├── 04_run_cross_degradation_eval.py
-│   └── 05_run_external_validation.py
+│   ├── 05_run_external_validation.py
+│   ├── 06_investigate_asassn_access.py
+│   └── 07_download_asassn_external_test.py
 ├── src/
 │   └── lightcurve_ml/
 │       ├── __init__.py
+│       ├── asassn.py
 │       ├── degradation.py
 │       ├── evaluation.py
 │       ├── features.py
@@ -157,6 +160,31 @@ Run it after creating `data/processed/real_lightcurves.csv`:
 
 ```bash
 python scripts/04_run_cross_degradation_eval.py
+```
+
+## ASAS-SN external test set
+
+The ASAS-SN external test set is built from local ASAS-SN Variable Stars metadata catalogs placed under:
+
+```text
+data/raw/asassn_v/
+```
+
+Expected catalog files:
+
+```text
+asassn_rrab_catalog.csv
+asassn_dcep_catalog.csv
+asassn_ew_catalog.csv
+```
+
+The downloader selects high-confidence objects, downloads light curves from ASAS-SN, and writes `data/processed/external_test_lightcurves.csv` in the normalized schema. Labels are mapped as `RRAB -> rrlyr`, `DCEP -> cep`, and `EW -> ecl`. This dataset is used only as an independent external validation set and is not used for training.
+
+Run:
+
+```bash
+python scripts/07_download_asassn_external_test.py
+python scripts/05_run_external_validation.py
 ```
 
 ## External validation
