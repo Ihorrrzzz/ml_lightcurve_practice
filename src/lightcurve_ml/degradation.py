@@ -20,10 +20,12 @@ def degrade_lightcurve(
     n_points:
         Maximum number of retained observations.
     seed:
-        Random seed.
+        Random seed. Used by random point selection, contiguous block
+        selection, and optional additional noise.
     mode:
         "random" keeps random points.
         "early" keeps the first n_points by time.
+        "contiguous" keeps a random contiguous block after sorting by time.
     extra_noise_scale:
         Additional Gaussian noise added to magnitudes, in magnitudes.
     """
@@ -39,8 +41,15 @@ def degrade_lightcurve(
         out = lc_sorted.loc[idx].sort_values("time").copy()
     elif mode == "early":
         out = lc_sorted.head(keep_n).copy()
+    elif mode == "contiguous":
+        if len(lc_sorted) <= n_points:
+            out = lc_sorted.copy()
+        else:
+            max_start = len(lc_sorted) - keep_n
+            start = int(rng.integers(0, max_start + 1))
+            out = lc_sorted.iloc[start : start + keep_n].copy()
     else:
-        raise ValueError("mode must be 'random' or 'early'")
+        raise ValueError("mode must be 'random', 'early', or 'contiguous'")
 
     if extra_noise_scale > 0:
         out["mag"] = out["mag"] + rng.normal(0, extra_noise_scale, size=len(out))
@@ -56,7 +65,11 @@ def degrade_dataset(
     mode: str = "random",
     extra_noise_scale: float = 0.0,
 ) -> pd.DataFrame:
-    """Apply degradation independently to every object."""
+    """Apply light-curve degradation independently to every object.
+
+    Supported modes are "random", "early", and "contiguous"; see
+    ``degrade_lightcurve`` for their meanings.
+    """
     parts = []
     for i, (_, lc) in enumerate(df.groupby("object_id", sort=False)):
         parts.append(

@@ -3,10 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, f1_score, log_loss
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -17,6 +15,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from lightcurve_ml.degradation import degrade_dataset
+from lightcurve_ml.evaluation import (
+    compute_model_metrics,
+    compute_reliability_curve,
+    dataset_summary_table,
+    per_class_report_table,
+    plot_reliability_curves,
+    save_confusion_matrix,
+    save_latex_summary,
+)
 from lightcurve_ml.features import extract_features
 from lightcurve_ml.plotting import plot_metric_vs_npoints
 from lightcurve_ml.real_data import load_real_lightcurves_from_csv
@@ -63,13 +70,6 @@ def prepare_xy(features: pd.DataFrame):
     return X, y
 
 
-def safe_log_loss(y_true, proba, labels):
-    try:
-        return float(log_loss(y_true, proba, labels=labels))
-    except Exception:
-        return float("nan")
-
-
 def missing_input_message() -> str:
     return (
         f"Missing real-data CSV: {REAL_DATA_PATH}\n"
@@ -94,6 +94,10 @@ def main() -> None:
     lightcurves = load_real_lightcurves_from_csv(REAL_DATA_PATH)
     if lightcurves.empty:
         raise SystemExit("No usable rows remain after cleaning real_lightcurves.csv.")
+    dataset_summary_table(lightcurves, "real").to_csv(
+        out_tab / "real_dataset_summary.csv",
+        index=False,
+    )
 
     print("[2/6] Splitting by object...")
     try:
@@ -133,6 +137,9 @@ def main() -> None:
 
     print("[6/6] Evaluating both models on degraded test curves and saving outputs...")
     metric_rows = []
+    per_class_rows = []
+    reliability_curves = {}
+    labels = sorted(train_full_features["label"].unique())
 
     for n in DEGRADED_POINTS:
         degraded_test = degrade_dataset(
@@ -149,35 +156,35 @@ def main() -> None:
             pred = model.predict(X_test)
             proba = model.predict_proba(X_test)
 
-            acc = accuracy_score(y_test, pred)
-            f1_macro = f1_score(y_test, pred, average="macro")
-            ll = safe_log_loss(y_test, proba, labels=model.classes_)
-
-            max_conf = np.max(proba, axis=1)
-            threshold = 0.60
-            confident_mask = max_conf >= threshold
-            abstention_rate = 1.0 - float(np.mean(confident_mask))
-            if np.any(confident_mask):
-                confident_accuracy = accuracy_score(y_test[confident_mask], pred[confident_mask])
-            else:
-                confident_accuracy = float("nan")
-
-            metric_rows.append(
-                {
-                    "model": model_name,
-                    "n_points": n,
-                    "accuracy": acc,
-                    "f1_macro": f1_macro,
-                    "log_loss": ll,
-                    "confidence_threshold": threshold,
-                    "abstention_rate": abstention_rate,
-                    "confident_accuracy": confident_accuracy,
-                    "n_test_objects": len(y_test),
-                }
+            metric_rows.append(compute_model_metrics(model_name, n, y_test, pred, proba, model.classes_))
+            per_class_rows.append(
+                per_class_report_table(
+                    dataset_name="real",
+                    model_name=model_name,
+                    n_points=n,
+                    y_true=y_test,
+                    y_pred=pred,
+                    labels=labels,
+                )
             )
+
+            save_confusion_matrix(
+                y_test,
+                pred,
+                labels,
+                title=f"Real-data confusion matrix: {model_name}, n={n}",
+                out_path=out_fig / f"real_confusion_{model_name}_{n}.png",
+            )
+
+            if n == 10:
+                reliability_curves[model_name] = compute_reliability_curve(y_test, pred, proba)
 
     metrics = pd.DataFrame(metric_rows)
     metrics.to_csv(out_tab / "real_metrics.csv", index=False)
+    pd.concat(per_class_rows, ignore_index=True).to_csv(
+        out_tab / "real_per_class_metrics.csv",
+        index=False,
+    )
 
     summary = metrics[[
         "model",
@@ -185,13 +192,20 @@ def main() -> None:
         "accuracy",
         "f1_macro",
         "log_loss",
+        "brier_score",
         "abstention_rate",
         "confident_accuracy",
     ]].copy()
     summary.to_csv(out_tab / "real_summary.csv", index=False)
+    save_latex_summary(summary, out_tab / "real_latex_summary.tex")
 
     plot_metric_vs_npoints(summary, "accuracy", out_fig / "real_accuracy_vs_npoints.png")
     plot_metric_vs_npoints(summary, "f1_macro", out_fig / "real_f1_vs_npoints.png")
+    plot_reliability_curves(
+        reliability_curves,
+        out_fig / "real_reliability_n10.png",
+        title="Real-data reliability curve, n=10",
+    )
 
     print("\nDone.")
     print(f"Tables saved to: {out_tab}")

@@ -27,11 +27,14 @@ ml_lightcurve_practice/
 ├── scripts/
 │   ├── 01_run_synthetic_mvp.py
 │   ├── 02_run_real_data_mvp.py
-│   └── 03_download_ogle_lmc_sample.py
+│   ├── 03_download_ogle_lmc_sample.py
+│   ├── 04_run_cross_degradation_eval.py
+│   └── 05_run_external_validation.py
 ├── src/
 │   └── lightcurve_ml/
 │       ├── __init__.py
 │       ├── degradation.py
+│       ├── evaluation.py
 │       ├── features.py
 │       ├── ogle.py
 │       ├── plotting.py
@@ -112,6 +115,12 @@ A header-only template is available at:
 data/processed/real_lightcurves_template.csv
 ```
 
+A header-only template for an independent external test set is available at:
+
+```text
+data/processed/external_test_lightcurves_template.csv
+```
+
 Run the real-data MVP from the project root:
 
 ```bash
@@ -136,6 +145,42 @@ Install dependencies, download the sample, then run the real-data experiment:
 pip install -r requirements.txt
 python scripts/03_download_ogle_lmc_sample.py
 python scripts/02_run_real_data_mvp.py
+```
+
+## Cross-degradation evaluation
+
+The matched degradation experiment is useful because it controls the training and test conditions, but it can be optimistic: the robust model is trained on synthetic random degradation and then tested on very similar degradation.
+
+Cross-degradation evaluation keeps the same object-level train/test split principle, trains the robust model only on random degraded training curves, and then tests both models under random, early, contiguous-window, and higher-noise degradation modes. This checks whether robust training helps under sparse/noisy light curves that do not exactly match the training degradation procedure.
+
+Run it after creating `data/processed/real_lightcurves.csv`:
+
+```bash
+python scripts/04_run_cross_degradation_eval.py
+```
+
+## External validation
+
+Controlled degradation is useful for isolating the effect of sparse and noisy observations, but it is not enough to demonstrate external generalization. A stronger validation trains on the OGLE sample and evaluates on an independent labelled dataset prepared in the same normalized format.
+
+Create the external test CSV at:
+
+```text
+data/processed/external_test_lightcurves.csv
+```
+
+It must use the standard columns:
+
+```text
+object_id,label,time,mag,mag_err,band
+```
+
+The external data can come from ASAS-SN, Gaia, BHTOM, or another independent labelled source. The script does not split the external data and does not train on it.
+
+Run:
+
+```bash
+python scripts/05_run_external_validation.py
 ```
 
 ## Interpretation

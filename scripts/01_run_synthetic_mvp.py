@@ -3,15 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import (
-    accuracy_score,
-    confusion_matrix,
-    f1_score,
-    log_loss,
-)
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -22,8 +15,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from lightcurve_ml.degradation import degrade_dataset
+from lightcurve_ml.evaluation import (
+    compute_model_metrics,
+    compute_reliability_curve,
+    dataset_summary_table,
+    per_class_report_table,
+    plot_reliability_curves,
+    save_confusion_matrix,
+    save_latex_summary,
+)
 from lightcurve_ml.features import extract_features
-from lightcurve_ml.plotting import plot_confusion_matrix, plot_metric_vs_npoints
+from lightcurve_ml.plotting import plot_metric_vs_npoints
 from lightcurve_ml.synthetic import generate_synthetic_lightcurves
 
 
@@ -69,13 +71,6 @@ def prepare_xy(features: pd.DataFrame):
     return X, y
 
 
-def safe_log_loss(y_true, proba, labels):
-    try:
-        return float(log_loss(y_true, proba, labels=labels))
-    except Exception:
-        return float("nan")
-
-
 def main() -> None:
     out_fig = PROJECT_ROOT / "outputs" / "figures"
     out_tab = PROJECT_ROOT / "outputs" / "tables"
@@ -89,6 +84,10 @@ def main() -> None:
         seed=RANDOM_STATE,
     )
     lightcurves.to_csv(PROJECT_ROOT / "data" / "processed" / "synthetic_lightcurves.csv", index=False)
+    dataset_summary_table(lightcurves, "synthetic").to_csv(
+        out_tab / "synthetic_dataset_summary.csv",
+        index=False,
+    )
 
     print("[2/7] Splitting by object...")
     train_lc, test_lc = split_by_object(lightcurves)
@@ -124,7 +123,8 @@ def main() -> None:
 
     print("[6/7] Evaluating both models on degraded test curves...")
     metric_rows = []
-    confusion_for_n10 = {}
+    per_class_rows = []
+    reliability_curves = {}
 
     for n in DEGRADED_POINTS:
         degraded_test = degrade_dataset(
@@ -141,38 +141,42 @@ def main() -> None:
             pred = model.predict(X_test)
             proba = model.predict_proba(X_test)
 
-            acc = accuracy_score(y_test, pred)
-            f1_macro = f1_score(y_test, pred, average="macro")
-            ll = safe_log_loss(y_test, proba, labels=model.classes_)
+            metric_rows.append(compute_model_metrics(model_name, n, y_test, pred, proba, model.classes_))
+            per_class_rows.append(
+                per_class_report_table(
+                    dataset_name="synthetic",
+                    model_name=model_name,
+                    n_points=n,
+                    y_true=y_test,
+                    y_pred=pred,
+                    labels=labels,
+                )
+            )
 
-            max_conf = np.max(proba, axis=1)
-            threshold = 0.60
-            confident_mask = max_conf >= threshold
-            abstention_rate = 1.0 - float(np.mean(confident_mask))
-            if np.any(confident_mask):
-                confident_accuracy = accuracy_score(y_test[confident_mask], pred[confident_mask])
-            else:
-                confident_accuracy = float("nan")
-
-            metric_rows.append(
-                {
-                    "model": model_name,
-                    "n_points": n,
-                    "accuracy": acc,
-                    "f1_macro": f1_macro,
-                    "log_loss": ll,
-                    "confidence_threshold": threshold,
-                    "abstention_rate": abstention_rate,
-                    "confident_accuracy": confident_accuracy,
-                    "n_test_objects": len(y_test),
-                }
+            save_confusion_matrix(
+                y_test,
+                pred,
+                labels,
+                title=f"Synthetic confusion matrix: {model_name}, n={n}",
+                out_path=out_fig / f"synthetic_confusion_{model_name}_{n}.png",
             )
 
             if n == 10:
-                confusion_for_n10[model_name] = confusion_matrix(y_test, pred, labels=labels)
+                reliability_curves[model_name] = compute_reliability_curve(y_test, pred, proba)
+                save_confusion_matrix(
+                    y_test,
+                    pred,
+                    labels,
+                    title=f"Confusion matrix: {model_name}, n=10",
+                    out_path=out_fig / f"confusion_{model_name}_n10.png",
+                )
 
     metrics = pd.DataFrame(metric_rows)
     metrics.to_csv(out_tab / "synthetic_metrics.csv", index=False)
+    pd.concat(per_class_rows, ignore_index=True).to_csv(
+        out_tab / "synthetic_per_class_metrics.csv",
+        index=False,
+    )
 
     summary = metrics[[
         "model",
@@ -180,22 +184,21 @@ def main() -> None:
         "accuracy",
         "f1_macro",
         "log_loss",
+        "brier_score",
         "abstention_rate",
         "confident_accuracy",
     ]].copy()
     summary.to_csv(out_tab / "synthetic_summary.csv", index=False)
+    save_latex_summary(summary, out_tab / "synthetic_latex_summary.tex")
 
     print("[7/7] Saving plots...")
     plot_metric_vs_npoints(summary, "accuracy", out_fig / "accuracy_vs_npoints.png")
     plot_metric_vs_npoints(summary, "f1_macro", out_fig / "f1_vs_npoints.png")
-
-    for model_name, cm in confusion_for_n10.items():
-        plot_confusion_matrix(
-            cm,
-            labels,
-            title=f"Confusion matrix: {model_name}, n=10",
-            out_path=out_fig / f"confusion_{model_name}_n10.png",
-        )
+    plot_reliability_curves(
+        reliability_curves,
+        out_fig / "synthetic_reliability_n10.png",
+        title="Synthetic reliability curve, n=10",
+    )
 
     print("\nDone.")
     print(f"Tables saved to: {out_tab}")
