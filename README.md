@@ -26,12 +26,14 @@ ml_lightcurve_practice/
 │   └── tables/
 ├── scripts/
 │   ├── 01_run_synthetic_mvp.py
-│   └── 02_run_real_data_mvp.py
+│   ├── 02_run_real_data_mvp.py
+│   └── 03_download_ogle_lmc_sample.py
 ├── src/
 │   └── lightcurve_ml/
 │       ├── __init__.py
 │       ├── degradation.py
 │       ├── features.py
+│       ├── ogle.py
 │       ├── plotting.py
 │       ├── real_data.py
 │       └── synthetic.py
@@ -123,6 +125,18 @@ Expected outputs:
 - `outputs/figures/real_f1_vs_npoints.png`
 
 ASAS-SN, OGLE, Gaia-derived data, or other labelled public light-curve samples can later be converted into this normalized format.
+
+## OGLE LMC sample
+
+The project includes a small reproducible OGLE-IV OCVS LMC downloader for an I-band MVP sample. It downloads only the first 30 light curves for each selected class (`rrlyr`, `cep`, `ecl`) and writes the normalized CSV used by the real-data MVP. This is not the full OGLE catalog.
+
+Install dependencies, download the sample, then run the real-data experiment:
+
+```bash
+pip install -r requirements.txt
+python scripts/03_download_ogle_lmc_sample.py
+python scripts/02_run_real_data_mvp.py
+```
 
 ## Interpretation
 

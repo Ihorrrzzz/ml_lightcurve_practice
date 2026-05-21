@@ -5,3 +5,4 @@ scikit-learn>=1.4
 scipy>=1.11
 astropy>=6.0
 tqdm>=4.66
+requests>=2.31
